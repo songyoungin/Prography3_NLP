@@ -3,3 +3,4 @@
 *.iml
 *.xml
 *.pth
+/exercise/.ipynb_checkpoints
