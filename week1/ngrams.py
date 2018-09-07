@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import pandas as pd
+
 import pickle
 import os
+from tensorboardX import SummaryWriter
 
 torch.manual_seed(1)
 
@@ -52,40 +53,52 @@ def train(trigrams, word2idx):
             loss.backward()
             optimizer.step()
 
-            if step % 10 == 0:
+            if step % 1000 == 0:
                 print("[%d/%d] [%d/%d] loss: %.3f" % (epoch+1, num_epochs, step+1, len(trigrams), loss.item()))
 
     print("Learning finished!")
     model.cpu()
 
     os.makedirs("weights", exist_ok=True)
-
     torch.save(model, "weights/ngrams_newsCorpus.pth")
 
-def test(word2idx):
-
+def test(trigrams, word2idx):
     idx2word = {v: k for k, v in word2idx.items()}
-
     model = torch.load("weights/ngrams_newsCorpus.pth")
     print(model)
 
-    test_input = "make my old".split()
-    test_input_idx = [word2idx[token] for token in test_input[:-1]]
+    test_input = trigrams[2]
+    test_input_idx = [word2idx[token] for token in test_input[0]]
     test_input_idx = torch.LongTensor(test_input_idx)
-    test_target_idx = [word2idx[test_input[-1]]]
+    test_target_idx = [word2idx[test_input[1][0]]]
 
+    model.eval()
     outputs = model(test_input_idx)
     outputs, idx = torch.max(outputs, dim=1)
 
     print("predicted:", idx2word[idx.data[0].item()], " actual:", idx2word[test_target_idx[0]])
 
-def main():
+def visualize(word2idx):
+    logdir = "tensorboard/ngrams"
+    os.makedirs(logdir, exist_ok=True)
 
-    # load data from csv file
-    data_path = "abcnews-date-text.csv"
-    data = pd.read_csv(data_path, engine='python')
-    data = data.values[:500, 1]
-    tokenized = [sentence.split() for sentence in data]
+    model = torch.load("weights/ngrams_newsCorpus.pth")
+    idx2word = {v: k for k, v in word2idx.items()}
+
+    mat = model.embedding.weight.data
+    groups = [idx2word[i] for i in range(len(word2idx))]
+
+    print(mat.shape)
+    print(len(groups))
+
+    writer = SummaryWriter(logdir)
+    writer.add_embedding(mat, metadata=groups)
+    writer.close()
+
+def main():
+    # load data from pickle file
+    with open("pickles/news_tokenize.pkl", "rb") as f:
+        tokenized = pickle.load(f)
 
     trigrams = []
     for sentence in tokenized:
@@ -98,24 +111,9 @@ def main():
             if token not in word2idx:
                 word2idx[token] = len(word2idx)
 
-    os.makedirs("./pickles", exist_ok=True)
-
-    with open("pickles/trigrams.pkl", "wb") as f:
-        pickle.dump(trigrams, f)
-
-    with open("pickles/word2idx_ngrams.pkl", "wb") as f:
-        pickle.dump(word2idx, f)
-
-    print("Saving pickles complete!!!")
-
-    with open("pickles/trigrams.pkl", "rb") as f:
-        trigrams = pickle.load(f)
-
-    with open("pickles/word2idx_ngrams.pkl", "rb") as f:
-        word2idx = pickle.load(f)
-
     train(trigrams, word2idx)
+    test(trigrams, word2idx)
+    visualize(word2idx)
 
 if __name__ == "__main__":
     main()
-    test()
