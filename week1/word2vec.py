@@ -5,10 +5,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
 from collections import Counter
-import pandas as pd
 from  tensorboardX import SummaryWriter
-import os, pickle, random
-from sklearn.utils import shuffle
+import os, pickle, random, shutil, math
+import numpy as np
 
 flatten = lambda l: [item for sublist in l for item in sublist]
 
@@ -84,7 +83,7 @@ def negative_sampling(word2idx, targets, unigram_table, k):
 
 def train(idx_pairs, word2idx, unigram_table):
     embedding_dim = 10
-    num_epochs = 10
+    num_epochs = 100
     negnum = 10
     lr = 0.05
     batch_size = 10
@@ -110,18 +109,22 @@ def train(idx_pairs, word2idx, unigram_table):
             optimizer.step()
 
             # do logging
-            if step % 500 == 0:
+            if step % 100 == 0:
                 print("[%d/%d] [%d/%d] loss:%.3f"
                       % (epoch+1, num_epochs, step, len(train_loader), loss.item()))
     print("Learning finished!!!")
 
     # save trained model
     model.cpu()
-    torch.save(model, "weights/word2vec_newsCorpus.pth")
+    torch.save(model, "weights/word2vec_newsCorpus_subsampling.pth")
     print("Saving model completed!!!")
 
 def visualize(model_path, idx2word):
-    logdir = "tensorboard/word2vec"
+    logdir = "tensorboard/word2vec_subsampling"
+
+    # delete logdir if it already exists
+    if os._exists(logdir):
+        shutil.rmtree(logdir)
     os.makedirs(logdir,exist_ok=True)
 
     model = torch.load(model_path)
@@ -138,55 +141,66 @@ def visualize(model_path, idx2word):
     writer.close()
 
 def main():
-    # load data from pickle file
-    with open("pickles/news_tokenize.pkl", "rb") as f:
-        tokenized = pickle.load(f)
+    # # load data from pickle file
+    # with open("pickles/news_tokenize.pkl", "rb") as f:
+    #     tokenized = pickle.load(f)
+    #
+    # # sub-sampling frequent words
+    # word_count = Counter(flatten(tokenized))
+    # total_count = sum([c for w, c in word_count.items()])
+    # threshold = 1e-2
+    # stopwords = []
+    # for w, c in word_count.items():
+    #     discard_prob = 1.0 - math.sqrt(threshold / (float(c) / total_count))
+    #     randpick = np.random.rand()
+    #     print(randpick)
+    #     if randpick< discard_prob:
+    #         stopwords.append(w)
+    #
+    # # setup word2idx, idx2word
+    # vocab = list(set(flatten(tokenized)) - set(stopwords))
+    # word2idx = {'<unk>': 0}
+    # for word in vocab:
+    #     if word not in word2idx:
+    #         word2idx[word] = len(word2idx)
+    # idx2word = {v: k for k, v in word2idx.items()}
+    #
+    # print(word2idx)
+    # # make word pairs
+    # window_size = 2
+    # idx_pairs = []
+    # for sentence in tokenized:
+    #     word_idxs = [word2idx[w] for w in sentence if w in word2idx]
+    #     for center_word_pos in range(len(word_idxs)):
+    #         for w in range(-window_size, window_size + 1):
+    #             context_word_pos = center_word_pos + w
+    #
+    #             if context_word_pos < 0 or context_word_pos >= len(word_idxs) or center_word_pos == context_word_pos:
+    #                 continue
+    #
+    #             idx_pairs.append((word_idxs[center_word_pos], word_idxs[context_word_pos]))
+    #
+    # print(len(idx_pairs))
+    #
+    # # build unigram distribution
+    # Z = 0.001
+    # num_total_words = sum([c for w, c in word_count.items() if w not in stopwords])
+    # unigram_table = []
+    #
+    # for word in vocab:
+    #     unigram_table.extend([word] * int(((word_count[word] / num_total_words) ** 0.75) / Z))
+    #
+    # # save idx2word for reproducibility
+    # os.makedirs("pickles", exist_ok=True)
+    # with open("pickles/word2vec_idx2word_subsampling.pkl", "wb") as f:
+    #     pickle.dump(idx2word, f)
 
-    # subsampling
-    word_count = Counter(flatten(tokenized))
-    min_count = 2
-    stopwords = []
-    for w, c in word_count.items():
-        if c < min_count:
-            stopwords.append(w)
+    # train(idx_pairs, word2idx, unigram_table)
 
-    # setup word2idx, idx2word
-    vocab = list(set(flatten(tokenized)) - set(stopwords))
-    word2idx = {'<unk>': 0}
-    for word in vocab:
-        if word not in word2idx:
-            word2idx[word] = len(word2idx)
-    idx2word = {v: k for k, v in word2idx.items()}
+    with open("pickles/word2vec_idx2word_subsampling.pkl", 'rb') as f:
+        idx2word = pickle.load(f)
 
-    # make word pairs
-    window_size = 2
-    idx_pairs = []
-    for sentence in tokenized:
-        word_idxs = [word2idx[w] for w in sentence if w in word2idx]
-        for center_word_pos in range(len(word_idxs)):
-            for w in range(-window_size, window_size + 1):
-                context_word_pos = center_word_pos + w
-
-                if context_word_pos < 0 or context_word_pos >= len(word_idxs) or center_word_pos == context_word_pos:
-                    continue
-
-                idx_pairs.append((word_idxs[center_word_pos], word_idxs[context_word_pos]))
-
-    # build unigram distribution
-    Z = 0.001
-    num_total_words = sum([c for w, c in word_count.items() if w not in stopwords])
-    unigram_table = []
-
-    for word in vocab:
-        unigram_table.extend([word] * int(((word_count[word] / num_total_words) ** 0.75) / Z))
-
-    # save idx2word for reproducibility
-    os.makedirs("pickles", exist_ok=True)
-    with open("pickles/word2vec_idx2word.pkl", "wb") as f:
-        pickle.dump(idx2word, f)
-
-    train(idx_pairs, word2idx, unigram_table)
-    visualize("weights/word2vec_newsCorpus.pth", idx2word)
+    visualize("weights/word2vec_newsCorpus_subsampling.pth", idx2word)
 
 if __name__ == "__main__":
     main()
