@@ -8,19 +8,14 @@ from config import get_config
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class CNNTextClassifier(nn.Module):
-    def __init__(self, text_field, label_field):
+    def __init__(self, vocab_size, num_classes):
         super(CNNTextClassifier, self).__init__()
         config = get_config()
-        config.vocab_size = len(text_field.vocab)
-        config.num_classes = len(label_field.vocab) - 1
         config.kernel_sizes = [int(k) for k in config.kernel_sizes.split(',')]
-
 
         self.config = config
 
-        vocab_size = config.vocab_size
         embedding_dim = config.embedding_dim
-        num_classes = config.num_classes
 
         channel_in = 1
         channel_out = config.channel_out
@@ -37,10 +32,9 @@ class CNNTextClassifier(nn.Module):
         # print("input:", x.shape)
         # input: (batch, vocab_size)
         h = self.embedding(x) # (batch, vocab_size, embedding_dim)
-        if self.config.static:
-            h = h.to(device)
-
+        # print(h.shape)
         h = h.unsqueeze(1) # (batch, 1, vocab_size, embedding_dim)
+        # print(h.shape)
         h = [F.relu(conv(h)).squeeze(3) for conv in self.conv1] # [(batch, channel_out, vocab_size)] * len(kernel_sizes)
         h = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in h]  # [(batch, channel_out)] * len(kernel_sizes)
         h = torch.cat(h, 1) # (batch, channel_out * len(kernel_sizes)
