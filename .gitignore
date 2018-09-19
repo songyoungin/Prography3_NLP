@@ -4,3 +4,4 @@
 *.xml
 *.pth
 /exercise/.ipynb_checkpoints
+/week3/data
